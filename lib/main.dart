@@ -94,7 +94,7 @@ class InfoCasa {
 const infoCasas = <String, InfoCasa>{
   'Moedas': InfoCasa(Icons.monetization_on, corEconomia, 'Ganhe 3 moedas.'),
   'Trigo': InfoCasa(Icons.grass, corProducao, 'Ganhe 2 alimentos.'),
-  'Negociação': InfoCasa(Icons.swap_horiz, corSocial, 'Venda 1 recurso a outro país por 1 a 3 moedas.'),
+  'Negociação': InfoCasa(Icons.swap_horiz, corSocial, 'Troque recursos e moedas com outro país. Ele pode aceitar, recusar ou fazer uma contraproposta.'),
   'Aliança': InfoCasa(Icons.handshake, corSocial, 'Proponha um pacto de 3 rodadas com outro país.'),
   'Defesa': InfoCasa(Icons.shield, corMilitar, 'Ganhe +2 de defesa na próxima batalha em que for atacado.'),
   'Guerra': InfoCasa(Icons.local_fire_department, corMilitar, 'Ataque outro país. Custa 2 moedas e 1 tropa mínima. Se vencer, o alvo perde 20 de vida menos a defesa dele.'),
@@ -506,87 +506,127 @@ class _TelaJogoState extends State<TelaJogo> {
 
   // ───── Negociação ─────
 
+  String descreverLado(Map<String, int> recursos, int moedas) {
+    final partes = <String>[
+      for (final e in recursos.entries)
+        if (e.value > 0) '${e.value} ${e.key}',
+      if (moedas > 0) '$moedas moeda(s)',
+    ];
+    return partes.isEmpty ? 'nada' : partes.join(' + ');
+  }
+
+  void fecharTroca(Jogador proponente, Jogador receptor, Proposta proposta) {
+    atualizar(() {
+      proposta.da.forEach((recurso, qtd) {
+        proponente.estoque[recurso] = (proponente.estoque[recurso] ?? 0) - qtd;
+        receptor.estoque[recurso] = min(12, (receptor.estoque[recurso] ?? 0) + qtd);
+      });
+      proposta.recebe.forEach((recurso, qtd) {
+        receptor.estoque[recurso] = (receptor.estoque[recurso] ?? 0) - qtd;
+        proponente.estoque[recurso] = min(12, (proponente.estoque[recurso] ?? 0) + qtd);
+      });
+      proponente.moedas += proposta.moedasRecebe - proposta.moedasDa;
+      receptor.moedas += proposta.moedasDa - proposta.moedasRecebe;
+
+      mensagem =
+          'Troca fechada: ${proponente.pais.nome} deu ${descreverLado(proposta.da, proposta.moedasDa)} '
+          'e recebeu ${descreverLado(proposta.recebe, proposta.moedasRecebe)} de ${receptor.pais.nome}.';
+    });
+    jogo.registrar(mensagem);
+  }
+
   Future<void> negociar() async {
     final indiceAlvo = await escolherAlvo();
     if (indiceAlvo == null) return;
-    final alvo = jogo.jogadores[indiceAlvo];
 
-    final recursoOferecido = await showDialog<String>(
+    var proponente = jogadorAtual;
+    var receptor = jogo.jogadores[indiceAlvo];
+
+    final primeira = await showDialog<Proposta>(
       context: context,
-      builder: (contextoDialogo) => SimpleDialog(
-        title: const Text('Recurso para oferecer'),
-        children: [
-          for (final recurso in todosRecursos)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(contextoDialogo, recurso),
-              child: Row(
-                children: [
-                  Icon(iconesRecursos[recurso], size: 20),
-                  const SizedBox(width: 10),
-                  Text('$recurso • ${jogadorAtual.estoque[recurso]} disponíveis'),
-                ],
-              ),
+      barrierDismissible: false,
+      builder: (_) => MesaNegociacao(
+        proponente: proponente,
+        receptor: receptor,
+        inicial: Proposta(),
+        titulo: 'Nova proposta',
+      ),
+    );
+    if (primeira == null) return;
+    Proposta proposta = primeira;
+
+    // A proposta vai e volta até alguém aceitar ou recusar.
+    while (true) {
+      final resposta = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (contextoDialogo) => AlertDialog(
+          title: Text('Proposta para ${receptor.pais.nome}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${proponente.pais.nome} oferece:', style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(descreverLado(proposta.da, proposta.moedasDa)),
+              const SizedBox(height: 12),
+              const Text('Em troca de:', style: TextStyle(fontWeight: FontWeight.w700)),
+              Text(descreverLado(proposta.recebe, proposta.moedasRecebe)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(contextoDialogo, 'recusar'),
+              child: const Text('Recusar'),
             ),
-        ],
-      ),
-    );
-
-    if (recursoOferecido == null || (jogadorAtual.estoque[recursoOferecido] ?? 0) < 1) {
-      mostrarAviso('Você não tem esse recurso.');
-      return;
-    }
-
-    final controladorPreco = TextEditingController(text: '1');
-
-    final preco = await showDialog<int>(
-      context: context,
-      builder: (contextoDialogo) => AlertDialog(
-        title: const Text('Preço em moedas (1 a 3)'),
-        content: TextField(
-          controller: controladorPreco,
-          keyboardType: TextInputType.number,
+            OutlinedButton(
+              onPressed: () => Navigator.pop(contextoDialogo, 'contra'),
+              child: const Text('Contraproposta'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(contextoDialogo, 'aceitar'),
+              child: const Text('Aceitar'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(contextoDialogo),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(contextoDialogo, int.tryParse(controladorPreco.text)),
-            child: const Text('Oferecer'),
-          ),
-        ],
-      ),
-    );
+      );
 
-    if (preco == null || preco < 1 || preco > 3 || alvo.moedas < preco) return;
+      if (resposta == 'aceitar') {
+        fecharTroca(proponente, receptor, proposta);
+        return;
+      }
 
-    final aceitou = await showDialog<bool>(
-      context: context,
-      builder: (contextoDialogo) => AlertDialog(
-        title: Text('Oferta para ${alvo.pais.nome}'),
-        content: Text('1 $recursoOferecido por $preco moeda(s).'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(contextoDialogo, false),
-            child: const Text('Recusar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(contextoDialogo, true),
-            child: const Text('Aceitar'),
-          ),
-        ],
-      ),
-    );
+      if (resposta == 'contra') {
+        // Os papéis se invertem: quem recebeu a proposta passa a propor.
+        final antigoProponente = proponente;
+        proponente = receptor;
+        receptor = antigoProponente;
 
-    if (aceitou == true) {
-      jogadorAtual.estoque[recursoOferecido] = (jogadorAtual.estoque[recursoOferecido] ?? 0) - 1;
-      alvo.estoque[recursoOferecido] = (alvo.estoque[recursoOferecido] ?? 0) + 1;
-      alvo.moedas -= preco;
-      jogadorAtual.moedas += preco;
-      mensagem = '${alvo.pais.nome} comprou 1 $recursoOferecido por $preco moeda(s).';
-      jogo.registrar('${alvo.pais.nome} comprou 1 $recursoOferecido por $preco moedas.');
+        final contra = await showDialog<Proposta>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => MesaNegociacao(
+            proponente: proponente,
+            receptor: receptor,
+            inicial: proposta.invertida(),
+            titulo: 'Contraproposta de ${proponente.pais.nome}',
+          ),
+        );
+
+        if (contra == null) {
+          mensagem = '${proponente.pais.nome} desistiu da negociação com ${receptor.pais.nome}.';
+          jogo.registrar(mensagem);
+          atualizar();
+          return;
+        }
+        proposta = contra;
+        continue;
+      }
+
+      mensagem = '${receptor.pais.nome} recusou a proposta de ${proponente.pais.nome}.';
+      jogo.registrar(mensagem);
       atualizar();
+      mostrarAviso('Proposta recusada.');
+      return;
     }
   }
 
@@ -652,10 +692,10 @@ class _TelaJogoState extends State<TelaJogo> {
       // Dano = 20 menos a defesa do alvo (incluindo o bônus da casa Defesa).
       dano = max(0, 20 - defensor.defesaTotal - defensor.bonusDefesaProximaBatalha);
       defensor.vida = max(0, defensor.vida - dano);
+      jogadorAtual.tropas = max(0, jogadorAtual.tropas - 1);
       defensor.tropas = max(0, defensor.tropas - 1);
     } else {
       jogadorAtual.tropas = max(0, jogadorAtual.tropas - 1);
-      jogadorAtual.vida = max(0, jogadorAtual.vida - dano);
     }
 
     defensor.bonusDefesaProximaBatalha = 0;
@@ -1428,7 +1468,7 @@ class _TelaJogoState extends State<TelaJogo> {
                 acaoPais(
                   icone: Icons.swap_horiz,
                   titulo: 'Negociar recursos',
-                  subtitulo: 'Venda 1 recurso por 1 a 3 moedas',
+                  subtitulo: 'Troque recursos e moedas com outro país',
                   aoTocar: negociar,
                 ),
                 const Divider(height: 1),
@@ -1606,3 +1646,203 @@ class _TelaJogoState extends State<TelaJogo> {
         ],
       );
 }
+
+
+// ───────────────────────── NEGOCIAÇÃO ─────────────────────────
+
+class Proposta {
+  final Map<String, int> da; // o que o proponente entrega
+  final Map<String, int> recebe; // o que o proponente pede
+  int moedasDa;
+  int moedasRecebe;
+
+  Proposta({
+    Map<String, int>? da,
+    Map<String, int>? recebe,
+    this.moedasDa = 0,
+    this.moedasRecebe = 0,
+  })  : da = {...?da},
+        recebe = {...?recebe};
+
+  // Usada na contraproposta: quem recebia passa a propor.
+  Proposta invertida() => Proposta(
+        da: recebe,
+        recebe: da,
+        moedasDa: moedasRecebe,
+        moedasRecebe: moedasDa,
+      );
+}
+
+// Valor aproximado de cada recurso, em moedas (serve só como guia na mesa).
+const valorRecursos = <String, int>{
+  'Alimentos': 1,
+  'Madeira': 1,
+  'Ferro': 2,
+  'Energia': 2,
+  'Medicamentos': 2,
+  'Especiarias': 2,
+  'Aço': 3,
+  'Cristais': 3,
+};
+
+int valorTotal(Map<String, int> recursos, int moedas) =>
+    moedas +
+    recursos.entries.fold<int>(0, (soma, e) => soma + e.value * (valorRecursos[e.key] ?? 1));
+
+class MesaNegociacao extends StatefulWidget {
+  final Jogador proponente, receptor;
+  final Proposta inicial;
+  final String titulo;
+
+  const MesaNegociacao({
+    super.key,
+    required this.proponente,
+    required this.receptor,
+    required this.inicial,
+    required this.titulo,
+  });
+
+  @override
+  State<MesaNegociacao> createState() => _MesaNegociacaoState();
+}
+
+class _MesaNegociacaoState extends State<MesaNegociacao> {
+  late final Proposta p = Proposta(
+    da: widget.inicial.da,
+    recebe: widget.inicial.recebe,
+    moedasDa: widget.inicial.moedasDa,
+    moedasRecebe: widget.inicial.moedasRecebe,
+  );
+
+  int totalRecursos(Map<String, int> m) => m.values.fold<int>(0, (a, b) => a + b);
+
+  // Cada lado precisa dar algo e a troca deve incluir ao menos 1 recurso.
+  bool get valida {
+    final dando = totalRecursos(p.da) + p.moedasDa;
+    final recebendo = totalRecursos(p.recebe) + p.moedasRecebe;
+    return dando > 0 && recebendo > 0 && totalRecursos(p.da) + totalRecursos(p.recebe) > 0;
+  }
+
+  Widget linha(IconData icone, String rotulo, int valor, int maximo, ValueChanged<int> aoMudar) {
+    final atual = min(valor, maximo);
+    return Row(
+      children: [
+        Icon(icone, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(rotulo, style: const TextStyle(fontSize: 13))),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: atual > 0 ? () => aoMudar(atual - 1) : null,
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
+        SizedBox(
+          width: 24,
+          child: Text('$atual', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: atual < maximo ? () => aoMudar(atual + 1) : null,
+          icon: const Icon(Icons.add_circle_outline),
+        ),
+      ],
+    );
+  }
+
+  Widget secao(Jogador quemDa, Jogador quemRecebe, Map<String, int> mapa, int moedas,
+      ValueChanged<int> aoMudarMoedas) {
+    final disponiveis = todosRecursos.where((r) => (quemDa.estoque[r] ?? 0) > 0).toList();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: quemDa.cor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: quemDa.cor.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${quemDa.pais.nome} dá', style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          if (disponiveis.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Text('Sem recursos para oferecer.', style: TextStyle(color: Colors.black54, fontSize: 12)),
+            ),
+          for (final recurso in disponiveis)
+            linha(
+              iconesRecursos[recurso]!,
+              '$recurso (vale ${valorRecursos[recurso] ?? 1}) • tem ${quemDa.estoque[recurso]}',
+              mapa[recurso] ?? 0,
+              max(0, min(quemDa.estoque[recurso] ?? 0, 12 - (quemRecebe.estoque[recurso] ?? 0))),
+              (v) => setState(() => mapa[recurso] = v),
+            ),
+          linha(Icons.monetization_on, 'Moedas • tem ${quemDa.moedas}', moedas, quemDa.moedas, aoMudarMoedas),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(widget.titulo, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  '${widget.proponente.pais.nome} negocia com ${widget.receptor.pais.nome}',
+                  style: const TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        secao(widget.proponente, widget.receptor, p.da, p.moedasDa,
+                            (v) => setState(() => p.moedasDa = v)),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 4),
+                          child: Icon(Icons.swap_vert, color: Colors.black45),
+                        ),
+                        secao(widget.receptor, widget.proponente, p.recebe, p.moedasRecebe,
+                            (v) => setState(() => p.moedasRecebe = v)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  valida
+                      ? 'Valor aproximado: ${widget.proponente.pais.nome} dá ${valorTotal(p.da, p.moedasDa)} • '
+                          '${widget.receptor.pais.nome} dá ${valorTotal(p.recebe, p.moedasRecebe)}'
+                      : 'Cada lado precisa dar algo, e a troca deve ter pelo menos 1 recurso.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: valida ? () => Navigator.pop(context, p) : null,
+                      child: const Text('Enviar proposta'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}   
