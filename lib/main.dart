@@ -26,20 +26,19 @@ class Pais {
 const todosPaises = [
   Pais('Veridânia', 2, 3, 3, 5, 'Florestas e agricultura', ['Alimentos', 'Madeira'], Color(0xff2e9e5b)),
   Pais('Nortélia', 3, 5, 2, 4, 'Montanhas e minerais', ['Ferro'], Color(0xff4a6fa5)),
-  Pais('Solária', 5, 2, 3, 4, 'Deserto e energia', ['Energia'], Color(0xffe8912d)),
+  Pais('Solária', 5, 2, 3, 4, 'Deserto e mineração', ['Ferro'], Color(0xffe8912d)),
   Pais('Thalassa', 2, 3, 5, 4, 'Mar e pesca', ['Alimentos'], Color(0xff1ba6b2)),
   Pais('Zafira', 2, 3, 4, 4, 'Cristais e gemas', ['Cristais'], Color(0xff8e5bd6)),
   Pais('Karnor', 5, 4, 2, 3, 'Metalurgia', ['Aço'], Color(0xffc44536)),
   Pais('Ismara', 2, 3, 3, 5, 'Ervas e cura', ['Medicamentos'], Color(0xffd4607f)),
   Pais('Druvânia', 3, 2, 2, 3, 'Espionagem e artefatos', ['Cristais'], Color(0xff5b5f97)),
-  Pais('Selvion', 1, 2, 5, 4, 'Especiarias e alimentos', ['Alimentos'], Color(0xffb8902a)),
+  Pais('Selvion', 1, 2, 5, 4, 'Especiarias e alimentos', ['Especiarias', 'Alimentos'], Color(0xffb8902a)),
 ];
 
 const todosRecursos = [
   'Alimentos',
   'Ferro',
   'Aço',
-  'Energia',
   'Cristais',
   'Medicamentos',
   'Especiarias',
@@ -50,11 +49,41 @@ const iconesRecursos = <String, IconData>{
   'Alimentos': Icons.restaurant,
   'Ferro': Icons.hardware,
   'Aço': Icons.build,
-  'Energia': Icons.bolt,
   'Cristais': Icons.diamond_outlined,
   'Medicamentos': Icons.medication,
   'Especiarias': Icons.spa,
   'Madeira': Icons.park,
+};
+
+// Quantas unidades de um recurso são gastas para usar a função dele.
+const custoUsoRecurso = 2;
+
+// Quantas vezes o jogador pode sortear ações por turno.
+const maxAcoesPorTurno = 2;
+
+// Os 6 pares possíveis de ações (índice 0 = dado 1, ..., índice 5 = dado 6).
+const paresDeAcoes = <List<String>>[
+  ['Guerra', 'Aliança'],
+  ['Guerra', 'Negociação'],
+  ['Guerra', 'Procurar recursos'],
+  ['Aliança', 'Negociação'],
+  ['Aliança', 'Procurar recursos'],
+  ['Negociação', 'Procurar recursos'],
+];
+
+class FuncaoRecurso {
+  final String efeito, historia;
+  const FuncaoRecurso(this.efeito, this.historia);
+}
+
+const funcoesRecursos = <String, FuncaoRecurso>{
+  'Alimentos': FuncaoRecurso('+1 tropa', 'Alimenta sua população.'),
+  'Ferro': FuncaoRecurso('+1 ataque', 'Você fabrica armas.'),
+  'Aço': FuncaoRecurso('+1 defesa', 'Você fabrica armaduras.'),
+  'Cristais': FuncaoRecurso('+1 moeda', 'Você troca com um mercador.'),
+  'Medicamentos': FuncaoRecurso('+20 de vida', 'Você cura sua população.'),
+  'Especiarias': FuncaoRecurso('+1 moeda', 'Você vende para um mercador.'),
+  'Madeira': FuncaoRecurso('+2 defesa na próxima batalha', 'Você constrói estruturas de defesa.'),
 };
 
 const casasDoTabuleiro = [
@@ -100,7 +129,7 @@ const infoCasas = <String, InfoCasa>{
   'Guerra': InfoCasa(Icons.local_fire_department, corMilitar, 'Ataque outro país. Custa 2 moedas e 1 tropa mínima. Se vencer, o alvo perde 20 de vida menos a defesa dele.'),
   'Exército': InfoCasa(Icons.military_tech, corMilitar, 'Pague 2 moedas e ganhe 2 tropas (só se tiver 3 ou menos).'),
   'Castelo': InfoCasa(Icons.castle, corMilitar, 'Pague 3 moedas e ganhe +1 de defesa permanente.'),
-  'Produção': InfoCasa(Icons.factory, corProducao, 'Ganhe 2 unidades do seu recurso principal.'),
+  'Produção': InfoCasa(Icons.factory, corProducao, 'Escolha 2 unidades de qualquer recurso.'),
   'Espionagem': InfoCasa(Icons.visibility, corSorte, 'Veja tropas e recursos de outro país.'),
   'Navio': InfoCasa(Icons.directions_boat, corEconomia, 'Ganhe 2 moedas com o comércio marítimo.'),
   'Evento': InfoCasa(Icons.auto_awesome, corSorte, 'Sorteio: moedas, alimento, tropa ou nada.'),
@@ -110,9 +139,17 @@ const infoCasas = <String, InfoCasa>{
   'Capital': InfoCasa(Icons.account_balance, corEconomia, 'Ganhe 2 moedas (apenas na primeira vez).'),
 };
 
+// Ações disponíveis no sorteio de ações do turno.
+const infoAcoesSorteio = <String, InfoCasa>{
+  'Guerra': InfoCasa(Icons.local_fire_department, corMilitar, 'Ataque outro país (custa 2 moedas).'),
+  'Aliança': InfoCasa(Icons.handshake, corSocial, 'Proponha um pacto de 3 rodadas.'),
+  'Negociação': InfoCasa(Icons.swap_horiz, corSocial, 'Troque recursos e moedas com outro país.'),
+  'Procurar recursos': InfoCasa(Icons.search, corProducao, 'Expedição por 1 moeda: 1 ou 2 recursos, ou nada.'),
+};
+
 class Jogador {
   final Pais pais;
-  int moedas = 5;
+  int moedas = 10;
   int vida = 100;
   int tropas = 3;
   int posicao = 0;
@@ -127,8 +164,8 @@ class Jogador {
 
   Jogador(this.pais);
 
-  int get ataqueTotal => min(5, pais.ataque + melhoriasAtaque);
-  int get defesaTotal => min(5, pais.defesa + melhoriasDefesa);
+  int get ataqueTotal => min(10, pais.ataque + melhoriasAtaque);
+  int get defesaTotal => min(10, pais.defesa + melhoriasDefesa);
   String get recursoPrincipal => pais.recursos.first;
   Color get cor => pais.cor;
   bool get vivo => vida > 0;
@@ -312,6 +349,7 @@ class TelaJogo extends StatefulWidget {
 class _TelaJogoState extends State<TelaJogo> {
   late Jogo jogo = widget.jogo;
   int? resultadoDado;
+  int acoesUsadas = 0;
   int abaSelecionada = 0;
   String mensagem = 'Sua vez! Role o dado para produzir recursos e andar no tabuleiro.';
 
@@ -323,6 +361,10 @@ class _TelaJogoState extends State<TelaJogo> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(texto), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  void adicionarRecurso(Jogador jogador, String recurso, int quantidade) {
+    jogador.estoque[recurso] = min(12, (jogador.estoque[recurso] ?? 0) + quantidade);
   }
 
   // ───── Escolha de alvo ─────
@@ -356,6 +398,215 @@ class _TelaJogoState extends State<TelaJogo> {
         ],
       ),
     );
+  }
+
+  // ───── Escolha de recurso (casa Produção) ─────
+
+  Future<String> escolherRecurso(String titulo) async {
+    final escolhido = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (contextoDialogo) => SimpleDialog(
+        title: Text(titulo),
+        children: [
+          for (final recurso in todosRecursos)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(contextoDialogo, recurso),
+              child: Row(
+                children: [
+                  Icon(iconesRecursos[recurso], size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(recurso, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(
+                          '$custoUsoRecurso → ${funcoesRecursos[recurso]!.efeito}',
+                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text('tem ${jogadorAtual.estoque[recurso] ?? 0}'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    return escolhido ?? jogadorAtual.recursoPrincipal;
+  }
+
+  // ───── Usar recursos ─────
+
+  void usarRecurso(String recurso) {
+    final jogador = jogadorAtual;
+    if (jogo.vencedor != null) return;
+
+    if ((jogador.estoque[recurso] ?? 0) < custoUsoRecurso) {
+      mostrarAviso('Precisa de $custoUsoRecurso $recurso.');
+      return;
+    }
+
+    final String? bloqueio = switch (recurso) {
+      'Alimentos' => jogador.tropas >= 10 ? 'Suas tropas já estão no máximo (10).' : null,
+      'Ferro' => jogador.ataqueTotal >= 10 ? 'Seu ataque já está no máximo (10).' : null,
+      'Aço' => jogador.defesaTotal >= 10 ? 'Sua defesa já está no máximo (10).' : null,
+      'Medicamentos' => jogador.vida >= 100 ? 'Sua vida já está cheia.' : null,
+      _ => null,
+    };
+    if (bloqueio != null) {
+      mostrarAviso(bloqueio);
+      return;
+    }
+
+    atualizar(() {
+      jogador.estoque[recurso] = (jogador.estoque[recurso] ?? 0) - custoUsoRecurso;
+      switch (recurso) {
+        case 'Alimentos':
+          jogador.tropas = min(10, jogador.tropas + 1);
+          mensagem = 'Você alimentou sua população e ganhou 1 tropa (${jogador.tropas}/10).';
+          break;
+        case 'Ferro':
+          jogador.melhoriasAtaque++;
+          mensagem = 'Você fabricou armas! Ataque agora é ${jogador.ataqueTotal}/10.';
+          break;
+        case 'Aço':
+          jogador.melhoriasDefesa++;
+          mensagem = 'Você fabricou armaduras! Defesa agora é ${jogador.defesaTotal}/10.';
+          break;
+        case 'Cristais':
+          jogador.moedas += 1;
+          mensagem = 'Você trocou cristais com um mercador e ganhou 1 moeda.';
+          break;
+        case 'Medicamentos':
+          jogador.vida = min(100, jogador.vida + 20);
+          mensagem = 'Você curou sua população: vida em ${jogador.vida}/100.';
+          break;
+        case 'Especiarias':
+          jogador.moedas += 1;
+          mensagem = 'Você vendeu especiarias a um mercador e ganhou 1 moeda.';
+          break;
+        case 'Madeira':
+          jogador.bonusDefesaProximaBatalha += 2;
+          mensagem = 'Você construiu estruturas de defesa: +2 de defesa na próxima batalha.';
+          break;
+      }
+    });
+    jogo.registrar('${jogador.pais.nome}: $mensagem');
+  }
+
+  // ───── Procurar recursos ─────
+
+  void procurarRecursos() {
+    final jogador = jogadorAtual;
+    if (jogo.vencedor != null) return;
+
+    if (jogador.moedas < 1) {
+      mostrarAviso('Precisa de 1 moeda para enviar a expedição.');
+      return;
+    }
+
+    // 0 = nada, 1-3 = 1 unidade, 4-5 = 2 unidades.
+    final sorte = jogo.aleatorio.nextInt(6);
+    final recurso = todosRecursos[jogo.aleatorio.nextInt(todosRecursos.length)];
+    final quantidade = sorte == 0 ? 0 : (sorte <= 3 ? 1 : 2);
+
+    atualizar(() {
+      jogador.moedas -= 1;
+      if (quantidade > 0) adicionarRecurso(jogador, recurso, quantidade);
+      mensagem = quantidade == 0
+          ? 'Sua expedição voltou de mãos vazias.'
+          : 'Sua expedição encontrou $quantidade $recurso!';
+    });
+    jogo.registrar('${jogador.pais.nome}: $mensagem');
+  }
+
+  // ───── Sorteio de ações do turno ─────
+
+  bool acaoDisponivel(String acao) => switch (acao) {
+        'Guerra' => jogadorAtual.moedas >= 2 && jogadorAtual.tropas >= 1,
+        'Procurar recursos' => jogadorAtual.moedas >= 1,
+        _ => true,
+      };
+
+  Future<void> sortearAcoes() async {
+    if (jogo.vencedor != null) return;
+    if (acoesUsadas >= maxAcoesPorTurno) {
+      mostrarAviso('Você já usou suas $maxAcoesPorTurno ações neste turno.');
+      return;
+    }
+
+    final dado = jogo.aleatorio.nextInt(6);
+    final opcoes = paresDeAcoes[dado];
+    atualizar(() => acoesUsadas++);
+    jogo.registrar('${jogadorAtual.pais.nome} sorteou ${dado + 1}: ${opcoes.join(' ou ')}.');
+
+    final semOpcao = opcoes.every((a) => !acaoDisponivel(a));
+
+    final escolhida = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (contextoDialogo) => SimpleDialog(
+        title: Text('Dado das ações: ${dado + 1}'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text('Escolha uma das ações para fazer agora:'),
+          ),
+          for (final acao in opcoes)
+            SimpleDialogOption(
+              onPressed: acaoDisponivel(acao) ? () => Navigator.pop(contextoDialogo, acao) : null,
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: acaoDisponivel(acao) ? infoAcoesSorteio[acao]!.cor : Colors.black26,
+                    child: Icon(infoAcoesSorteio[acao]!.icone, color: Colors.white, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(acao, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(
+                          acaoDisponivel(acao)
+                              ? infoAcoesSorteio[acao]!.descricao
+                              : 'Indisponível (faltam moedas ou tropas).',
+                          style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (semOpcao)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(contextoDialogo, 'nenhuma'),
+              child: const Text('Nenhuma disponível — perder esta ação'),
+            ),
+        ],
+      ),
+    );
+
+    switch (escolhida) {
+      case 'Guerra':
+        await batalhar();
+        break;
+      case 'Aliança':
+        await proporAlianca();
+        break;
+      case 'Negociação':
+        await negociar();
+        break;
+      case 'Procurar recursos':
+        procurarRecursos();
+        break;
+    }
+    atualizar();
   }
 
   // ───── Turno ─────
@@ -416,7 +667,7 @@ class _TelaJogoState extends State<TelaJogo> {
       case 'Exército':
         if (jogadorAtual.moedas >= 2 && jogadorAtual.tropas <= 3) {
           jogadorAtual.moedas -= 2;
-          jogadorAtual.tropas = min(5, jogadorAtual.tropas + 2);
+          jogadorAtual.tropas = min(10, jogadorAtual.tropas + 2);
           mensagem += ' Recrutou 2 tropas por 2 moedas.';
         } else {
           mostrarAviso('Precisa de 2 moedas e espaço para tropas.');
@@ -424,21 +675,19 @@ class _TelaJogoState extends State<TelaJogo> {
         break;
 
       case 'Castelo':
-        if (jogadorAtual.moedas >= 3 && jogadorAtual.defesaTotal < 5) {
+        if (jogadorAtual.moedas >= 3 && jogadorAtual.defesaTotal < 10) {
           jogadorAtual.moedas -= 3;
           jogadorAtual.melhoriasDefesa++;
           mensagem += ' Defesa +1 por 3 moedas.';
         } else {
-          mostrarAviso('Precisa de 3 moedas; defesa máxima é 5.');
+          mostrarAviso('Precisa de 3 moedas; defesa máxima é 10.');
         }
         break;
 
       case 'Produção':
-        jogadorAtual.estoque[jogadorAtual.recursoPrincipal] = min(
-          12,
-          (jogadorAtual.estoque[jogadorAtual.recursoPrincipal] ?? 0) + 2,
-        );
-        mensagem += ' Produziu mais 2 ${jogadorAtual.recursoPrincipal}.';
+        final recursoEscolhido = await escolherRecurso('Produção: escolha 2 unidades');
+        adicionarRecurso(jogadorAtual, recursoEscolhido, 2);
+        mensagem += ' Produziu 2 $recursoEscolhido.';
         break;
 
       case 'Espionagem':
@@ -465,7 +714,7 @@ class _TelaJogoState extends State<TelaJogo> {
           jogadorAtual.estoque['Alimentos'] = min(12, (jogadorAtual.estoque['Alimentos'] ?? 0) + 1);
         }
         if (sorteioEvento == 2) {
-          jogadorAtual.tropas = min(5, jogadorAtual.tropas + 1);
+          jogadorAtual.tropas = min(10, jogadorAtual.tropas + 1);
         }
         mensagem = 'Evento: ${[
           'ganhou 2 moedas.',
@@ -481,7 +730,7 @@ class _TelaJogoState extends State<TelaJogo> {
         break;
 
       case 'Recuperação':
-        jogadorAtual.tropas = min(5, jogadorAtual.tropas + 1);
+        jogadorAtual.tropas = min(10, jogadorAtual.tropas + 1);
         mensagem += ' Recuperou 1 tropa.';
         break;
 
@@ -758,14 +1007,13 @@ class _TelaJogoState extends State<TelaJogo> {
   void melhorarAtributo(bool melhorarAtaque) {
     final atributoAtual = melhorarAtaque ? jogadorAtual.ataqueTotal : jogadorAtual.defesaTotal;
 
-    if (jogadorAtual.moedas < 3 || atributoAtual >= 5) {
-      mostrarAviso('Precisa de 3 moedas e atributo abaixo de 5.');
+    if (jogadorAtual.moedas < 3 || atributoAtual >= 10) {
+      mostrarAviso('Precisa de 3 moedas e atributo abaixo de 10.');
       return;
     }
 
     atualizar(() {
       jogadorAtual.moedas -= 3;
-      // Corrigido: antes a defesa subia sempre, mesmo ao melhorar o ataque.
       if (melhorarAtaque) {
         jogadorAtual.melhoriasAtaque++;
         mensagem = 'Ataque melhorado para ${jogadorAtual.ataqueTotal}.';
@@ -780,6 +1028,7 @@ class _TelaJogoState extends State<TelaJogo> {
     if (resultadoDado == null) return;
 
     atualizar(() {
+      acoesUsadas = 0;
       resultadoDado = null;
       jogo.proximoTurno();
       mensagem = 'Vez de ${jogadorAtual.pais.nome}! Role o dado para começar.';
@@ -793,17 +1042,32 @@ class _TelaJogoState extends State<TelaJogo> {
       context: context,
       builder: (_) => const AlertDialog(
         title: Text('Como jogar'),
-        content: Text(
-          '1. No início do turno, receba 2 unidades do recurso principal.\n'
-          '2. Role o dado e ande pelo tabuleiro.\n'
-          '3. Resolva a casa onde parou (toque nela para ver o efeito).\n'
-          '4. Encerre o turno.\n\n'
-          'Guerra custa 2 moedas.\n'
-          'Ataque = dado + tropas + ataque.\n'
-          'Defesa = dado + defesa + tropas + bônus.\n'
-          'Maior resultado vence; empate favorece a defesa.\n\n'
-          'Vida: todo país começa com 100. Se o atacante vence, o defensor perde 20 menos a sua defesa. '
-          'Com 0 de vida o país é eliminado. Vence o último país em pé.',
+        content: SingleChildScrollView(
+          child: Text(
+            '1. No início do turno, receba 2 unidades do recurso principal.\n'
+            '2. Role o dado e ande pelo tabuleiro.\n'
+            '3. Resolva a casa onde parou (toque nela para ver o efeito).\n'
+            '4. Se quiser, sorteie ações (até 2 por turno).\n'
+            '5. Encerre o turno.\n\n'
+            'Sorteio de ações: você pode sortear até 2 vezes por turno. '
+            'O dado mostra 2 das 4 ações (Guerra, Aliança, Negociação, Procurar recursos) '
+            'e você escolhe uma para fazer.\n\n'
+            'Guerra custa 2 moedas.\n'
+            'Ataque = dado + tropas + ataque.\n'
+            'Defesa = dado + defesa + tropas + bônus.\n'
+            'Maior resultado vence; empate favorece a defesa.\n\n'
+            'Vida: todo país começa com 100. Se o atacante vence, o defensor perde 20 menos a sua defesa. '
+            'Com 0 de vida o país é eliminado. Vence o último país em pé.\n\n'
+            'Recursos (gaste 2 de cada, na aba País):\n'
+            '• Alimentos: +1 tropa\n'
+            '• Ferro: +1 ataque\n'
+            '• Aço: +1 defesa\n'
+            '• Cristais e Especiarias: +1 moeda\n'
+            '• Medicamentos: cura 20 de vida\n'
+            '• Madeira: +2 de defesa na próxima batalha\n\n'
+            'Casa Produção: você escolhe qual recurso ganhar.\n'
+            'Procurar recursos: custa 1 moeda. Pode render 1 ou 2 unidades de um recurso sorteado, ou nada.',
+          ),
         ),
       ),
     );
@@ -1010,9 +1274,9 @@ class _TelaJogoState extends State<TelaJogo> {
           Row(
             children: [
               pilulaHud(Icons.monetization_on, '${jogador.moedas}', 'Moedas'),
-              pilulaHud(Icons.groups, '${jogador.tropas}/5', 'Tropas'),
-              pilulaHud(Icons.flash_on, '${jogador.ataqueTotal}/5', 'Ataque'),
-              pilulaHud(Icons.shield, '${jogador.defesaTotal}/5', 'Defesa'),
+              pilulaHud(Icons.groups, '${jogador.tropas}/10', 'Tropas'),
+              pilulaHud(Icons.flash_on, '${jogador.ataqueTotal}/10', 'Ataque'),
+              pilulaHud(Icons.shield, '${jogador.defesaTotal}/10', 'Defesa'),
             ],
           ),
           barraVidaHud(jogador),
@@ -1334,6 +1598,18 @@ class _TelaJogoState extends State<TelaJogo> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    onPressed: fim || acoesUsadas >= maxAcoesPorTurno ? null : sortearAcoes,
+                    icon: const Icon(Icons.casino_outlined),
+                    label: Text('Sortear ação ($acoesUsadas/$maxAcoesPorTurno)'),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1407,14 +1683,38 @@ class _TelaJogoState extends State<TelaJogo> {
     );
   }
 
+  Widget usoRecurso(String recurso) {
+    final funcao = funcoesRecursos[recurso]!;
+    final pode = (jogadorAtual.estoque[recurso] ?? 0) >= custoUsoRecurso;
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: pode ? jogadorAtual.cor.withValues(alpha: 0.15) : const Color(0xfff0f2ef),
+        child: Icon(
+          iconesRecursos[recurso],
+          color: pode ? escurecer(jogadorAtual.cor, 0.4) : Colors.black26,
+        ),
+      ),
+      title: Text(
+        '$recurso → ${funcao.efeito}',
+        style: TextStyle(fontWeight: FontWeight.w600, color: pode ? null : Colors.black38),
+      ),
+      subtitle: Text('${funcao.historia} (gasta $custoUsoRecurso)'),
+      trailing: FilledButton(
+        onPressed: pode && jogo.vencedor == null ? () => usarRecurso(recurso) : null,
+        child: const Text('Usar'),
+      ),
+    );
+  }
+
   Widget acaoPais({
     required IconData icone,
     required String titulo,
     required String subtitulo,
     required VoidCallback aoTocar,
     int? custo,
+    bool habilitada = true,
   }) {
-    final disponivel = custo == null || jogadorAtual.moedas >= custo;
+    final disponivel = habilitada && (custo == null || jogadorAtual.moedas >= custo);
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: disponivel ? jogadorAtual.cor.withValues(alpha: 0.15) : const Color(0xfff0f2ef),
@@ -1460,37 +1760,32 @@ class _TelaJogoState extends State<TelaJogo> {
             children: [for (final recurso in todosRecursos) cartaoRecurso(recurso)],
           ),
           const SizedBox(height: 18),
+          Text('Usar recursos', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [for (final recurso in todosRecursos) usoRecurso(recurso)],
+            ),
+          ),
+          const SizedBox(height: 10),
           Text('Ações', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Card(
             child: Column(
               children: [
                 acaoPais(
-                  icone: Icons.swap_horiz,
-                  titulo: 'Negociar recursos',
-                  subtitulo: 'Troque recursos e moedas com outro país',
-                  aoTocar: negociar,
-                ),
-                const Divider(height: 1),
-                acaoPais(
-                  icone: Icons.handshake_outlined,
-                  titulo: 'Propor aliança',
-                  subtitulo: 'Pacto de 3 rodadas',
-                  aoTocar: proporAlianca,
-                ),
-                const Divider(height: 1),
-                acaoPais(
-                  icone: Icons.local_fire_department,
-                  titulo: 'Iniciar guerra',
-                  subtitulo: 'Ataque outro país',
-                  custo: 2,
-                  aoTocar: batalhar,
+                  icone: Icons.casino,
+                  titulo: 'Sortear ações',
+                  subtitulo:
+                      'Role o dado e escolha 1 de 2 ações: guerra, aliança, negociação ou procurar recursos ($acoesUsadas/$maxAcoesPorTurno usadas)',
+                  habilitada: acoesUsadas < maxAcoesPorTurno,
+                  aoTocar: sortearAcoes,
                 ),
                 const Divider(height: 1),
                 acaoPais(
                   icone: Icons.trending_up,
                   titulo: 'Melhorar ataque',
-                  subtitulo: 'Ataque +1 (máximo 5)',
+                  subtitulo: 'Ataque +1 (máximo 10)',
                   custo: 3,
                   aoTocar: () => melhorarAtributo(true),
                 ),
@@ -1498,7 +1793,7 @@ class _TelaJogoState extends State<TelaJogo> {
                 acaoPais(
                   icone: Icons.security,
                   titulo: 'Melhorar defesa',
-                  subtitulo: 'Defesa +1 (máximo 5)',
+                  subtitulo: 'Defesa +1 (máximo 10)',
                   custo: 3,
                   aoTocar: () => melhorarAtributo(false),
                 ),
@@ -1647,7 +1942,6 @@ class _TelaJogoState extends State<TelaJogo> {
       );
 }
 
-
 // ───────────────────────── NEGOCIAÇÃO ─────────────────────────
 
 class Proposta {
@@ -1678,7 +1972,6 @@ const valorRecursos = <String, int>{
   'Alimentos': 1,
   'Madeira': 1,
   'Ferro': 2,
-  'Energia': 2,
   'Medicamentos': 2,
   'Especiarias': 2,
   'Aço': 3,
@@ -1845,4 +2138,4 @@ class _MesaNegociacaoState extends State<MesaNegociacao> {
           ),
         ),
       );
-}   
+}
